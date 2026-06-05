@@ -1,0 +1,14 @@
+{
+  "name": "noe-terminal-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "WebSocket → node-pty terminal backend for the Noé app. Kept separate from the web app so the frontend build never touches native deps.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  }
+}

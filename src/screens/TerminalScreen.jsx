@@ -3,19 +3,111 @@ import { useColors } from '../theme/colors';
 import { Dot } from '../components/Dot';
 import { BackBtn } from '../components/BackBtn';
 
-// Terminal — a mock Claude Code session with ANSI color rendering. (A real build
-// would wire this to a backend WebSocket → node-pty.)
-export function TerminalScreen({ dark, onBack }) {
-  // Terminal uses its own fixed palette; useColors kept for parity with the handoff.
-  useColors(dark);
+const STATUS = {
+  mock: { color: '#6b7280', label: '模拟' },
+  connecting: { color: '#eab308', label: 'Connecting' },
+  connected: { color: '#22c55e', label: 'Connected' },
+  disconnected: { color: '#6b7280', label: 'Disconnected' },
+  error: { color: '#ef4444', label: 'Error' },
+};
+
+// ── Real terminal: xterm.js bridged to the node-pty WebSocket backend ──
+function RealTerminal({ wsUrl, onStatus }) {
+  const elRef = React.useRef(null);
+  React.useEffect(() => {
+    let disposed = false;
+    let cleanup = () => {};
+    (async () => {
+      const [{ Terminal }, { FitAddon }] = await Promise.all([
+        import('@xterm/xterm'),
+        import('@xterm/addon-fit'),
+      ]);
+      await import('@xterm/xterm/css/xterm.css');
+      if (disposed || !elRef.current) return;
+
+      const term = new Terminal({
+        fontFamily: '"SF Mono", "Fira Code", Menlo, monospace',
+        fontSize: 12,
+        cursorBlink: true,
+        theme: { background: '#0d0d0f', foreground: '#d4d4d4', cursor: '#a855f7' },
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.open(elRef.current);
+      try {
+        fit.fit();
+      } catch {
+        /* ignore */
+      }
+
+      onStatus('connecting');
+      let ws;
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (e) {
+        onStatus('error');
+        term.write('\r\n\x1b[31m无法连接: ' + (e?.message || e) + '\x1b[0m\r\n');
+        return;
+      }
+      ws.onopen = () => {
+        onStatus('connected');
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+      };
+      ws.onmessage = (e) => {
+        try {
+          const m = JSON.parse(e.data);
+          if (m.type === 'output') term.write(m.data);
+          else if (m.type === 'exit') term.write('\r\n\x1b[90m[process exited]\x1b[0m\r\n');
+        } catch {
+          term.write(e.data);
+        }
+      };
+      ws.onclose = () => onStatus('disconnected');
+      ws.onerror = () => onStatus('error');
+
+      const dataSub = term.onData((d) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data: d }));
+      });
+      const ro = new ResizeObserver(() => {
+        try {
+          fit.fit();
+          if (ws.readyState === WebSocket.OPEN)
+            ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+        } catch {
+          /* ignore */
+        }
+      });
+      ro.observe(elRef.current);
+
+      cleanup = () => {
+        ro.disconnect();
+        dataSub.dispose();
+        try {
+          ws.close();
+        } catch {
+          /* ignore */
+        }
+        term.dispose();
+      };
+    })();
+    return () => {
+      disposed = true;
+      cleanup();
+    };
+  }, [wsUrl, onStatus]);
+
+  return <div ref={elRef} style={{ width: '100%', height: '100%', padding: '6px 8px', background: '#0d0d0f' }} />;
+}
+
+// ── Mock terminal: a simulated Claude Code session with ANSI rendering ──
+function MockTerminal() {
   const [lines, setLines] = React.useState([
     { type: 'system', text: '╭─────────────────────────────────────╮' },
     { type: 'system', text: '│  Noé Terminal v1.0                  │' },
     { type: 'system', text: '│  WebSocket → node-pty → Claude Code │' },
     { type: 'system', text: '╰─────────────────────────────────────╯' },
     { type: 'info', text: '' },
-    { type: 'info', text: '\x1b[32m✓\x1b[0m Connected to ws://localhost:3001' },
-    { type: 'info', text: '\x1b[32m✓\x1b[0m PTY session active (bash)' },
+    { type: 'info', text: '\x1b[90m  模拟模式 — 在 ⚙ 里填入终端服务地址以连接真实 shell\x1b[0m' },
     { type: 'info', text: '' },
     { type: 'output', text: '\x1b[36m~/projects/noe\x1b[0m \x1b[33m(main)\x1b[0m' },
     { type: 'prompt', text: '$ claude' },
@@ -37,7 +129,6 @@ export function TerminalScreen({ dark, onBack }) {
   }, [lines]);
 
   const renderAnsi = (text) => {
-    // Simple ANSI color parser
     const colorMap = {
       30: '#4a4a4a', 31: '#ef4444', 32: '#22c55e', 33: '#eab308',
       34: '#3b82f6', 35: '#a855f7', 36: '#06b6d4', 37: '#e8e6e3',
@@ -48,7 +139,6 @@ export function TerminalScreen({ dark, onBack }) {
     let currentStyle = {};
     return parts.map((part, i) => {
       if (i % 2 === 1) {
-        // This is a code
         const codes = part.split(';');
         codes.forEach((code) => {
           if (code === '0') currentStyle = {};
@@ -70,11 +160,8 @@ export function TerminalScreen({ dark, onBack }) {
     const cmd = input.trim();
     setInput('');
     setProcessing(true);
-
-    // Add the command line
     setLines((prev) => [...prev, { type: 'input', text: `\x1b[35m❯\x1b[0m ${cmd}` }]);
 
-    // Simulate response
     setTimeout(() => {
       let response = [];
       if (cmd === '/help' || cmd === 'help') {
@@ -94,9 +181,8 @@ export function TerminalScreen({ dark, onBack }) {
       } else if (cmd === '/status') {
         response = [
           { type: 'info', text: '' },
-          { type: 'output', text: '\x1b[32m●\x1b[0m WebSocket: \x1b[32mConnected\x1b[0m' },
-          { type: 'output', text: '\x1b[32m●\x1b[0m PTY: \x1b[32mActive\x1b[0m (pid: 48291)' },
-          { type: 'output', text: '\x1b[32m●\x1b[0m Model: \x1b[36mclaude-sonnet-4-5\x1b[0m' },
+          { type: 'output', text: '\x1b[33m●\x1b[0m Mode: \x1b[33mSimulated\x1b[0m' },
+          { type: 'output', text: '\x1b[90m●\x1b[0m 配置 ws:// 地址以连接真实 PTY' },
           { type: 'info', text: '' },
         ];
       } else {
@@ -105,9 +191,7 @@ export function TerminalScreen({ dark, onBack }) {
           { type: 'output', text: `\x1b[90m  Thinking...\x1b[0m` },
           { type: 'info', text: '' },
           { type: 'output', text: `\x1b[37m  I'll help you with: "${cmd}"\x1b[0m` },
-          { type: 'output', text: `\x1b[37m  This terminal connects to Claude Code via\x1b[0m` },
-          { type: 'output', text: `\x1b[37m  WebSocket → node-pty for full interactive\x1b[0m` },
-          { type: 'output', text: `\x1b[37m  ANSI support.\x1b[0m` },
+          { type: 'output', text: `\x1b[37m  Connect a backend (⚙) for a real shell.\x1b[0m` },
           { type: 'info', text: '' },
           { type: 'output', text: '\x1b[32m✓\x1b[0m Done \x1b[90m(0.8s · 124 tokens)\x1b[0m' },
           { type: 'info', text: '' },
@@ -120,38 +204,7 @@ export function TerminalScreen({ dark, onBack }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '58px 0 0' }}>
-      <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <BackBtn dark={true} onClick={onBack} />
-        <span
-          style={{
-            fontSize: 16,
-            fontWeight: 600,
-            color: '#e8e6e3',
-            letterSpacing: -0.3,
-            fontFamily: '-apple-system, system-ui',
-          }}
-        >
-          Terminal
-        </span>
-        <div style={{ flex: 1 }} />
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '3px 8px',
-            borderRadius: 8,
-            background: 'rgba(34,197,94,0.12)',
-            border: '0.5px solid rgba(34,197,94,0.2)',
-          }}
-        >
-          <Dot color="#22c55e" size={5} />
-          <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 500 }}>Connected</span>
-        </div>
-      </div>
-
-      {/* Terminal body */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div
         ref={scrollRef}
         style={{
@@ -167,7 +220,7 @@ export function TerminalScreen({ dark, onBack }) {
       >
         {lines.map((line, i) => (
           <div key={i} style={{ minHeight: line.text ? undefined : 8 }}>
-            {line.text ? renderAnsi(line.text) : ' '}
+            {line.text ? renderAnsi(line.text) : ' '}
           </div>
         ))}
         {processing && (
@@ -176,15 +229,7 @@ export function TerminalScreen({ dark, onBack }) {
           </div>
         )}
       </div>
-
-      {/* Input */}
-      <div
-        style={{
-          padding: '8px 14px 36px',
-          background: '#0d0d0f',
-          borderTop: '0.5px solid rgba(255,255,255,0.06)',
-        }}
-      >
+      <div style={{ padding: '8px 14px 0', background: '#0d0d0f', borderTop: '0.5px solid rgba(255,255,255,0.06)' }}>
         <div
           style={{
             display: 'flex',
@@ -215,6 +260,150 @@ export function TerminalScreen({ dark, onBack }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── Terminal screen: header + (real xterm | mock) + connection config ──
+export function TerminalScreen({ dark, onBack }) {
+  // Header chrome is always dark to match the terminal body.
+  useColors(dark);
+  const [wsUrl, setWsUrl] = React.useState(() => {
+    try {
+      return localStorage.getItem('noe_terminal_ws') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [status, setStatus] = React.useState(wsUrl ? 'connecting' : 'mock');
+  const [showConfig, setShowConfig] = React.useState(false);
+  const [draftUrl, setDraftUrl] = React.useState(wsUrl);
+
+  const connect = () => {
+    const url = draftUrl.trim();
+    try {
+      if (url) localStorage.setItem('noe_terminal_ws', url);
+      else localStorage.removeItem('noe_terminal_ws');
+    } catch {
+      /* ignore */
+    }
+    setWsUrl(url);
+    setStatus(url ? 'connecting' : 'mock');
+    setShowConfig(false);
+  };
+  const useMock = () => {
+    setDraftUrl('');
+    try {
+      localStorage.removeItem('noe_terminal_ws');
+    } catch {
+      /* ignore */
+    }
+    setWsUrl('');
+    setStatus('mock');
+    setShowConfig(false);
+  };
+
+  const badge = STATUS[status] || STATUS.mock;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '58px 0 0' }}>
+      <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <BackBtn dark={true} onClick={onBack} />
+        <span
+          style={{
+            fontSize: 16,
+            fontWeight: 600,
+            color: '#e8e6e3',
+            letterSpacing: -0.3,
+            fontFamily: '-apple-system, system-ui',
+          }}
+        >
+          Terminal
+        </span>
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '3px 8px',
+            borderRadius: 8,
+            background: `${badge.color}1f`,
+            border: `0.5px solid ${badge.color}33`,
+          }}
+        >
+          <Dot color={badge.color} size={5} />
+          <span style={{ fontSize: 10, color: badge.color, fontWeight: 500 }}>{badge.label}</span>
+        </div>
+        <div
+          onClick={() => {
+            setDraftUrl(wsUrl);
+            setShowConfig((s) => !s);
+          }}
+          style={{ cursor: 'pointer', padding: '2px 4px', fontSize: 14, opacity: 0.7 }}
+          title="终端服务设置"
+        >
+          ⚙
+        </div>
+      </div>
+
+      {showConfig && (
+        <div style={{ padding: '0 16px 8px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: 10,
+              padding: '6px 8px 6px 12px',
+              border: '0.5px solid rgba(255,255,255,0.1)',
+            }}
+          >
+            <input
+              value={draftUrl}
+              onChange={(e) => setDraftUrl(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && connect()}
+              placeholder="ws://localhost:3001  或  wss://host/terminal?token=…"
+              style={{
+                flex: 1,
+                border: 'none',
+                outline: 'none',
+                background: 'transparent',
+                fontFamily: '"SF Mono", Menlo, monospace',
+                fontSize: 12,
+                color: '#e8e6e3',
+                padding: '4px 0',
+              }}
+            />
+            <div
+              onClick={connect}
+              style={{
+                padding: '5px 10px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: '#a855f7',
+                color: '#fff',
+              }}
+            >
+              连接
+            </div>
+            <div
+              onClick={useMock}
+              style={{ padding: '5px 8px', borderRadius: 8, fontSize: 12, cursor: 'pointer', color: '#9ca3af' }}
+            >
+              模拟
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+        {wsUrl ? <RealTerminal wsUrl={wsUrl} onStatus={setStatus} /> : <MockTerminal />}
+      </div>
+      <div style={{ height: 36, background: '#0d0d0f' }} />
     </div>
   );
 }
