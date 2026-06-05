@@ -1,0 +1,114 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: #ddd9d2;
+  font-family: -apple-system, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+textarea::placeholder,
+input::placeholder {
+  color: inherit;
+  opacity: 0.35;
+}
+
+@keyframes orbPulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes waveBar {
+  0%,
+  100% {
+    height: 3px;
+  }
+  50% {
+    height: 18px;
+  }
+}
+
+@keyframes softFloat1 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(10px, -14px);
+  }
+  66% {
+    transform: translate(-8px, 8px);
+  }
+}
+
+@keyframes softFloat2 {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  33% {
+    transform: translate(-12px, 10px);
+  }
+  66% {
+    transform: translate(8px, -6px);
+  }
+}
+
+@keyframes cursorBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes orbFloat {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-15px) scale(1.03);
+  }
+}
+
+@keyframes dispersionRotate {
+  from {
+    filter: blur(3px) hue-rotate(0deg);
+  }
+  to {
+    filter: blur(3px) hue-rotate(360deg);
+  }
+}
+
+/* Screen fade transition */
+.v2-screen {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  scrollbar-width: none;
+}
