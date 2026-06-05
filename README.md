@@ -101,5 +101,28 @@ The repo is zero‑config ready: Vercel auto‑detects **Vite** (build `vite bui
 > can't host a PTY). Run `server/terminal` on a host that allows long‑lived
 > sockets (e.g. a VPS) and point the app at its `wss://` URL.
 
+## Self-host (your own domain, no Vercel)
+
+Serve the static build with any web server and run the API as a tiny Node
+service (`server/api/server.js`, **zero dependencies** — reuses
+`src/server/chatProxy.js`).
+
+```bash
+npm install && npm run build                 # → dist/
+node server/api/server.js                     # /api on 127.0.0.1:3012
+```
+
+nginx in front:
+
+```nginx
+server {
+    server_name noechat.example.com;
+    root /path/to/dist;
+    location / { try_files $uri /index.html; }
+    location /api/ { proxy_pass http://127.0.0.1:3012; proxy_buffering off; }
+    # listen 443 ssl …  (e.g. `certbot --nginx -d noechat.example.com`)
+}
+```
+
 See `design_handoff_noe/README.md` for the full design spec (tokens, animation
 table, state model, backend architecture).
