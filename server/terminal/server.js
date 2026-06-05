@@ -15,12 +15,13 @@ import { WebSocketServer } from 'ws';
 import pty from 'node-pty';
 
 const PORT = Number(process.env.PORT) || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
 const TOKEN = process.env.TERMINAL_TOKEN || '';
 const SHELL = process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : 'bash');
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ port: PORT, host: HOST });
 console.log(
-  `Noé terminal server listening on ws://0.0.0.0:${PORT}` + (TOKEN ? ' (token required)' : ' (no token — dev only)')
+  `Noé terminal server listening on ws://${HOST}:${PORT}` + (TOKEN ? ' (token required)' : ' (no token — dev only)')
 );
 
 wss.on('connection', (ws, req) => {
