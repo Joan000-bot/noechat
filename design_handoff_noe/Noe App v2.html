@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Noe — AI Companion v2</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      display: flex; align-items: center; justify-content: center;
+      background: #ddd9d2;
+      font-family: -apple-system, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    textarea::placeholder, input::placeholder { color: inherit; opacity: 0.35; }
+
+    @keyframes orbPulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+    }
+    @keyframes waveBar {
+      0%, 100% { height: 3px; }
+      50% { height: 18px; }
+    }
+    @keyframes softFloat1 {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(10px, -14px); }
+      66% { transform: translate(-8px, 8px); }
+    }
+    @keyframes softFloat2 {
+      0%, 100% { transform: translate(0, 0); }
+      33% { transform: translate(-12px, 10px); }
+      66% { transform: translate(8px, -6px); }
+    }
+
+    @keyframes cursorBlink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+    @keyframes orbFloat {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-15px) scale(1.03); }
+    }
+    @keyframes dispersionRotate {
+      from { filter: blur(3px) hue-rotate(0deg); }
+      to { filter: blur(3px) hue-rotate(360deg); }
+    }
+
+    /* Screen fade transition */
+    .v2-screen { transition: opacity 0.25s ease, transform 0.25s ease; }
+
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="noe-v2-components.jsx"></script>
+  <script type="text/babel" src="noe-v2-screens.jsx"></script>
+
+  <script type="text/babel">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "dark": true,
+      "warmth": "cool",
+      "glassBlur": "strong"
+    }/*EDITMODE-END*/;
+
+    function BgAmbient({ dark }) {
+      const blobs = dark ? [
+        { color: 'rgba(155,138,206,0.08)', size: 180, x: '12%', y: '18%', anim: 'softFloat1 14s ease-in-out infinite' },
+        { color: 'rgba(107,158,196,0.06)', size: 150, x: '68%', y: '55%', anim: 'softFloat2 18s ease-in-out infinite' },
+      ] : [
+        { color: 'rgba(155,138,206,0.06)', size: 200, x: '8%', y: '15%', anim: 'softFloat1 14s ease-in-out infinite' },
+        { color: 'rgba(200,123,148,0.04)', size: 160, x: '65%', y: '60%', anim: 'softFloat2 18s ease-in-out infinite' },
+      ];
+      return (
+        <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', borderRadius: 48, zIndex: 0, pointerEvents: 'none' }}>
+          {blobs.map((b, i) => (
+            <div key={i} style={{
+              position: 'absolute', left: b.x, top: b.y,
+              width: b.size, height: b.size, borderRadius: '50%',
+              background: b.color, filter: 'blur(50px)',
+              animation: b.anim,
+            }} />
+          ))}
+        </div>
+      );
+    }
+
+    function NoeAppV2() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const dark = t.dark;
+      const [screen, setScreen] = React.useState('home');
+      const [visible, setVisible] = React.useState(true);
+
+      // Persist
+      React.useEffect(() => {
+        const s = localStorage.getItem('noe_v2_screen');
+        if (s) setScreen(s);
+        const d = localStorage.getItem('noe_v2_dark');
+        if (d !== null) setTweak('dark', d === 'true');
+      }, []);
+      React.useEffect(() => { localStorage.setItem('noe_v2_screen', screen); }, [screen]);
+
+      const navigate = (s) => {
+        setVisible(false);
+        setTimeout(() => {
+          setScreen(s);
+          setTimeout(() => setVisible(true), 30);
+        }, 120);
+      };
+      const goBack = () => navigate('home');
+
+      const bgColors = {
+        warm: dark ? '#161618' : '#F5F3EF',
+        neutral: dark ? '#161618' : '#F0EFED',
+        cool: dark ? '#161618' : '#ECEEF0',
+      };
+      const bg = bgColors[t.warmth] || bgColors.warm;
+
+      const tabs = [
+        { id: 'home', icon: '🏠', label: '主页' },
+        { id: 'chat', icon: '💬', label: '对话' },
+        { id: 'journal', icon: '📝', label: '日记' },
+        { id: 'dream', icon: '🌙', label: '梦境' },
+        { id: 'timeline', icon: '⏳', label: '时间线' },
+      ];
+
+      const renderScreen = () => {
+        switch (screen) {
+          case 'home': return <HomeScreenV2 dark={dark} onNavigate={navigate} />;
+          case 'chathub': return <ChatHubScreenV2 dark={dark} onBack={goBack} />;
+          case 'music': return <MusicScreenV2 dark={dark} onBack={goBack} />;
+          case 'journal': return <JournalScreenV2 dark={dark} onBack={goBack} />;
+          case 'dream': return <DreamScreenV2 dark={dark} onBack={goBack} />;
+          case 'timeline': return <TimelineScreenV2 dark={dark} onBack={goBack} />;
+          case 'memory': return <MemoryScreenV2 dark={dark} onBack={goBack} />;
+          case 'board': return <MessageBoardV2 dark={dark} onBack={goBack} />;
+          case 'settings': return <SettingsScreenV2 dark={dark} onBack={goBack} />;
+          case 'terminal': return <TerminalScreenV2 dark={dark} onBack={goBack} />;
+          default: return <HomeScreenV2 dark={dark} onNavigate={navigate} />;
+        }
+      };
+
+      return (
+        <div style={{ position: 'relative' }}>
+          {/* Phone shell */}
+          <div style={{
+            width: 402, height: 874, borderRadius: 48, overflow: 'hidden',
+            position: 'relative', background: bg,
+            boxShadow: '0 40px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.1)',
+            WebkitFontSmoothing: 'antialiased',
+          }}>
+            <BgAmbient dark={dark} />
+
+            {/* Dynamic Island */}
+            <div style={{
+              position: 'absolute', top: 11, left: '50%', transform: 'translateX(-50%)',
+              width: 126, height: 37, borderRadius: 24, background: '#000', zIndex: 50,
+            }} />
+
+            {/* Status bar */}
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 45 }}>
+              <IOSStatusBar dark={dark} />
+            </div>
+
+            {/* Screen */}
+            <div className="v2-screen" style={{
+              height: '100%', display: 'flex', flexDirection: 'column',
+              position: 'relative', zIndex: 1,
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'translateX(0)' : 'translateX(10px)',
+            }}>
+              {renderScreen()}
+            </div>
+
+            {/* Tab bar — removed per user request */}
+
+            {/* Home indicator */}
+            <div style={{
+              position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 60,
+              height: 28, display: 'flex', justifyContent: 'center', alignItems: 'flex-end',
+              paddingBottom: 7, pointerEvents: 'none',
+            }}>
+              <div style={{
+                width: 134, height: 5, borderRadius: 100,
+                background: dark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.2)',
+              }} />
+            </div>
+          </div>
+
+          {/* Tweaks */}
+          <TweaksPanel>
+            <TweakSection label="主题" />
+            <TweakToggle label="深色模式" value={t.dark}
+              onChange={(v) => { setTweak('dark', v); localStorage.setItem('noe_v2_dark', String(v)); }} />
+            <TweakRadio label="色温" value={t.warmth}
+              options={['warm', 'neutral', 'cool']}
+              onChange={(v) => setTweak('warmth', v)} />
+            <TweakSection label="玻璃效果" />
+            <TweakRadio label="模糊强度" value={t.glassBlur}
+              options={['light', 'medium', 'strong']}
+              onChange={(v) => setTweak('glassBlur', v)} />
+          </TweaksPanel>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<NoeAppV2 />);
+  </script>
+</body>
+</html>
