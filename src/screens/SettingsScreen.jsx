@@ -4,6 +4,7 @@ import { Glass } from '../components/Glass';
 import { SectionLabel } from '../components/SectionLabel';
 import { BackBtn } from '../components/BackBtn';
 import { fetchModels } from '../lib/chat';
+import * as spotify from '../lib/spotify';
 
 function lsSet(key, value) {
   try {
@@ -87,6 +88,9 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
   });
   const [fetching, setFetching] = React.useState(false);
   const [fetchError, setFetchError] = React.useState('');
+  const [spotifyClientId, setSpotifyClientId] = React.useState(() => spotify.getClientId());
+  const [spotifyConnected, setSpotifyConnected] = React.useState(() => spotify.isConnected());
+  const [showSpotifyPanel, setShowSpotifyPanel] = React.useState(false);
 
   // Auto-set base URL when provider changes
   const switchProvider = (p) => {
@@ -135,6 +139,14 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
       label: '基础设施',
       items: [
         { icon: '🔑', title: 'API Keys', detail: selectedModel || '未配置', color: '#D4A853', action: () => setShowApiPanel(!showApiPanel) },
+        {
+          icon: '🎧',
+          title: 'Spotify',
+          detail: spotifyConnected ? '已连接' : spotifyClientId ? '未连接' : '未配置',
+          color: '#1DB954',
+          action: () => setShowSpotifyPanel(!showSpotifyPanel),
+          isSpotify: true,
+        },
         { icon: '🔌', title: 'MCP 服务', detail: '3 个已连接', color: '#6BAFB2' },
         { icon: '💾', title: '数据存储', detail: '本地 + 云端', color: '#6B9EC4' },
       ],
@@ -513,6 +525,106 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
                             </div>
                           </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+                  {/* Expanded Spotify panel */}
+                  {item.isSpotify && showSpotifyPanel && (
+                    <div style={{ padding: '0 14px 14px' }}>
+                      <div
+                        style={{
+                          borderTop: `0.5px solid ${dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}`,
+                          paddingTop: 12,
+                        }}
+                      >
+                        <div style={{ fontSize: 11, color: c.muted, marginBottom: 8, lineHeight: 1.5 }}>
+                          在 Spotify 开发者后台新建应用，把下面的 Redirect URI 添加进去，再填入 Client ID。
+                        </div>
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, color: c.muted, marginBottom: 4 }}>
+                            Redirect URI（复制到 Spotify 后台）
+                          </div>
+                          <input
+                            readOnly
+                            value={spotify.redirectUri()}
+                            onFocus={(e) => e.target.select()}
+                            style={{
+                              width: '100%',
+                              border: 'none',
+                              outline: 'none',
+                              background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                              borderRadius: 10,
+                              padding: '8px 12px',
+                              fontSize: 11,
+                              color: c.muted,
+                              fontFamily: 'monospace',
+                            }}
+                          />
+                        </div>
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 11, color: c.muted, marginBottom: 4 }}>Client ID</div>
+                          <input
+                            value={spotifyClientId}
+                            onChange={(e) => {
+                              setSpotifyClientId(e.target.value);
+                              spotify.setClientId(e.target.value.trim());
+                            }}
+                            placeholder="Spotify Client ID"
+                            style={{
+                              width: '100%',
+                              border: 'none',
+                              outline: 'none',
+                              background: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                              borderRadius: 10,
+                              padding: '8px 12px',
+                              fontSize: 12,
+                              color: c.text,
+                              fontFamily: 'monospace',
+                            }}
+                          />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          {spotifyConnected ? (
+                            <div
+                              onClick={() => {
+                                spotify.disconnect();
+                                setSpotifyConnected(false);
+                              }}
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: 10,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                background: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                                color: c.text,
+                              }}
+                            >
+                              断开连接
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => {
+                                if (spotifyClientId.trim()) spotify.beginAuth().catch(() => {});
+                              }}
+                              style={{
+                                padding: '8px 14px',
+                                borderRadius: 10,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: spotifyClientId.trim() ? 'pointer' : 'default',
+                                background: '#1DB954',
+                                color: '#fff',
+                                opacity: spotifyClientId.trim() ? 1 : 0.5,
+                              }}
+                            >
+                              连接 Spotify
+                            </div>
+                          )}
+                          <span style={{ fontSize: 11, color: spotifyConnected ? '#1DB954' : c.muted }}>
+                            {spotifyConnected ? '● 已连接' : '未连接'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   )}

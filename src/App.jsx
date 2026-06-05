@@ -1,4 +1,5 @@
 import React from 'react';
+import { handleRedirect as handleSpotifyRedirect } from './lib/spotify';
 import { SvgFilters } from './components/SvgFilters';
 import { IOSStatusBar } from './components/ios/IOSStatusBar';
 import { HomeScreen } from './screens/HomeScreen';
@@ -99,6 +100,11 @@ export default function App() {
       /* ignore */
     }
   }, [screen]);
+
+  // Complete the Spotify OAuth redirect if we came back with a ?code=
+  React.useEffect(() => {
+    handleSpotifyRedirect().catch(() => {});
+  }, []);
 
   // Track OS theme for 'system' mode
   React.useEffect(() => {

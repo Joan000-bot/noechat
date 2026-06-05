@@ -83,7 +83,7 @@ design_handoff_noe/        Original design prototype + spec (source of truth)
 | **Chat** | **Real.** Streams from an OpenAI/Anthropic‑compatible API via the same‑origin `/api/chat` proxy (`api/chat.js` on Vercel, mirrored by a Vite dev middleware). Configure provider + key + model in Settings. Falls back to a canned demo with no key. |
 | **Terminal** | **Real** when a backend is configured — xterm.js over a WebSocket to `server/terminal` (`node-pty`). Set the `ws://` URL via the ⚙ in the Terminal screen; falls back to a simulated session otherwise. See `server/terminal/README.md`. |
 | **Memory / Journal / Message Board** | **Real** local persistence (add / remove, saved to `localStorage`). |
-| **Music** | Mock playlist + simulated playback (Spotify integration is a possible next step). |
+| **Music** | **Real** when connected to Spotify (Settings → Spotify; Authorization Code + PKCE, no secret): live now‑playing, working transport, and your playlists. Falls back to the simulated demo player otherwise. |
 
 ## Deploy to Vercel (git integration)
 

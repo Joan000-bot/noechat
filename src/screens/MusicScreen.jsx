@@ -5,9 +5,20 @@ import { WaveBars } from '../components/WaveBars';
 import { NoeOrb } from '../components/NoeOrb';
 import { PillButton } from '../components/PillButton';
 import { BackBtn } from '../components/BackBtn';
+import * as sp from '../lib/spotify';
 
-// Music — shared listening: a playlist view and a player with scrolling lyrics.
+// Music — uses the real Spotify player when connected (Settings → Spotify),
+// otherwise the simulated demo player.
 export function MusicScreen({ dark, onBack }) {
+  return sp.isConnected() ? (
+    <SpotifyMusic dark={dark} onBack={onBack} />
+  ) : (
+    <MockMusic dark={dark} onBack={onBack} />
+  );
+}
+
+// Demo player: a simulated shared playlist with scrolling lyrics.
+function MockMusic({ dark, onBack }) {
   const c = useColors(dark);
   const [playing, setPlaying] = React.useState(true);
   const [progress, setProgress] = React.useState(0.35);
@@ -430,6 +441,233 @@ export function MusicScreen({ dark, onBack }) {
               </svg>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Real Spotify player: live now-playing + transport, and the user's playlists.
+function SpotifyMusic({ dark, onBack }) {
+  const c = useColors(dark);
+  const COLOR = '#1DB954';
+  const [pb, setPb] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState('');
+  const [showPlaylists, setShowPlaylists] = React.useState(false);
+  const [playlists, setPlaylists] = React.useState([]);
+
+  const refresh = React.useCallback(async () => {
+    try {
+      setPb(await sp.getPlayback());
+      setError('');
+    } catch (e) {
+      setError(String(e?.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    refresh();
+    const iv = setInterval(refresh, 3000);
+    return () => clearInterval(iv);
+  }, [refresh]);
+
+  React.useEffect(() => {
+    if (!showPlaylists || playlists.length) return;
+    sp.getPlaylists()
+      .then((d) => setPlaylists(d?.items || []))
+      .catch((e) => setError(String(e?.message || e)));
+  }, [showPlaylists, playlists.length]);
+
+  const item = pb?.item;
+  const isPlaying = !!pb?.is_playing;
+  const progress = item?.duration_ms ? (pb.progress_ms || 0) / item.duration_ms : 0;
+  const art = item?.album?.images?.[0]?.url;
+  const fmt = (ms) => {
+    const s = Math.floor((ms || 0) / 1000);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  };
+  const doAction = async (fn) => {
+    try {
+      await fn();
+      setTimeout(refresh, 400);
+    } catch (e) {
+      setError(String(e?.message || e));
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '58px 0 36px' }}>
+      <div style={{ padding: '0 16px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <BackBtn dark={dark} onClick={onBack} />
+        <span style={{ fontSize: 16, fontWeight: 600, color: c.text, letterSpacing: -0.3 }}>一起听歌</span>
+        <span style={{ fontSize: 11, color: COLOR, fontWeight: 600 }}>Spotify</span>
+        <div style={{ flex: 1 }} />
+        <PillButton dark={dark} onClick={() => setShowPlaylists(!showPlaylists)}>
+          <span style={{ fontSize: 12, color: c.sub }}>{showPlaylists ? '播放器' : '歌单'}</span>
+        </PillButton>
+      </div>
+
+      {showPlaylists ? (
+        <div style={{ flex: 1, overflow: 'auto', padding: '0 16px' }}>
+          {playlists.length === 0 && (
+            <div style={{ textAlign: 'center', padding: '24px 0', fontSize: 13, color: c.muted }}>
+              没有歌单或正在加载…
+            </div>
+          )}
+          {playlists.map((p) => (
+            <Glass
+              key={p.id}
+              dark={dark}
+              radius={14}
+              intensity="light"
+              style={{ marginBottom: 6 }}
+              onClick={() => doAction(() => sp.playContext(p.uri))}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px' }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
+                    flexShrink: 0,
+                    background: p.images?.[0]?.url
+                      ? `url(${p.images[0].url}) center/cover`
+                      : `${COLOR}33`,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 600,
+                      color: c.text,
+                      letterSpacing: -0.2,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {p.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>
+                    {p.tracks?.total ?? 0} 首 · {p.owner?.display_name || ''}
+                  </div>
+                </div>
+              </div>
+            </Glass>
+          ))}
+          <div style={{ height: 20 }} />
+        </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '0 32px' }}>
+          <div
+            style={{
+              width: 190,
+              height: 190,
+              borderRadius: 22,
+              marginBottom: 24,
+              marginTop: 8,
+              background: art ? `url(${art}) center/cover` : `linear-gradient(135deg, ${COLOR} 0%, ${COLOR}66 100%)`,
+              boxShadow: `0 12px 40px ${COLOR}33`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              animation: isPlaying ? 'orbPulse 4s ease-in-out infinite' : 'none',
+            }}
+          >
+            {!art && <span style={{ fontSize: 40, opacity: 0.8 }}>♪</span>}
+          </div>
+
+          {item ? (
+            <>
+              <div style={{ textAlign: 'center', marginBottom: 16, width: '100%' }}>
+                <div
+                  style={{
+                    fontSize: 20,
+                    fontWeight: 700,
+                    color: c.text,
+                    letterSpacing: -0.3,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {item.name}
+                </div>
+                <div style={{ fontSize: 14, color: c.sub, marginTop: 2 }}>
+                  {(item.artists || []).map((a) => a.name).join(', ')}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, justifyContent: 'center', marginTop: 8 }}>
+                  <NoeOrb size={14} dark={dark} />
+                  <span style={{ fontSize: 12, color: COLOR }}>和 Noé 一起听 · Spotify</span>
+                </div>
+              </div>
+              <div style={{ width: '100%', marginBottom: 22 }}>
+                <div
+                  style={{
+                    height: 3,
+                    borderRadius: 1.5,
+                    width: '100%',
+                    background: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{ height: '100%', borderRadius: 1.5, width: `${progress * 100}%`, background: COLOR, transition: 'width 0.3s linear' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, fontSize: 11, color: c.muted }}>
+                  <span>{fmt(pb.progress_ms)}</span>
+                  <span>{fmt(item.duration_ms)}</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div
+              style={{
+                textAlign: 'center',
+                marginBottom: 22,
+                color: c.muted,
+                fontSize: 13,
+                lineHeight: 1.6,
+                whiteSpace: 'pre-line',
+              }}
+            >
+              {loading ? '正在读取 Spotify…' : 'Spotify 上没有正在播放的内容。\n在任意设备上播放一首歌，这里就会同步。'}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+            <div onClick={() => doAction(sp.previous)} style={{ cursor: 'pointer' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill={c.sub}>
+                <path d="M19 20L9 12l10-8v16zM7 4H5v16h2V4z" />
+              </svg>
+            </div>
+            <Glass dark={dark} radius={999} intensity="medium" onClick={() => doAction(isPlaying ? sp.pause : sp.play)}>
+              <div style={{ width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isPlaying ? (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill={c.text}>
+                    <rect x="6" y="4" width="4" height="16" rx="1" />
+                    <rect x="14" y="4" width="4" height="16" rx="1" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill={c.text}>
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                )}
+              </div>
+            </Glass>
+            <div onClick={() => doAction(sp.next)} style={{ cursor: 'pointer' }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill={c.sub}>
+                <path d="M5 4l10 8-10 8V4zM17 4h2v16h-2V4z" />
+              </svg>
+            </div>
+          </div>
+
+          {error && <div style={{ marginTop: 16, fontSize: 11, color: '#C87B94', textAlign: 'center' }}>{error}</div>}
         </div>
       )}
     </div>
