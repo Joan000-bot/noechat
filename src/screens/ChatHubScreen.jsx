@@ -2,6 +2,30 @@ import React from 'react';
 import { useColors } from '../theme/colors';
 import { NoeOrb } from '../components/NoeOrb';
 import { RichBubble } from './chat/RichBubble';
+import { streamChat } from '../lib/chat';
+
+const nowHHMM = () => new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' });
+
+// Chat config persisted by the Settings screen. When a key + model are present
+// the chat talks to the real provider via /api/chat; otherwise it falls back to
+// the canned demo response.
+function getChatConfig() {
+  try {
+    return {
+      provider: localStorage.getItem('noe_provider') || 'openai',
+      apiKey: localStorage.getItem('noe_api_key') || '',
+      baseUrl: localStorage.getItem('noe_base_url') || '',
+      model: localStorage.getItem('noe_model') || '',
+      system: [localStorage.getItem('noe_system_prompt'), localStorage.getItem('noe_user_style')]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
+  } catch {
+    return { provider: 'openai', apiKey: '', baseUrl: '', model: '', system: '' };
+  }
+}
+
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 // Chat — full-screen conversation with a left slide-out drawer of chat history,
 // streaming responses with a thinking phase, and a Claude-style input bar.
@@ -37,6 +61,7 @@ export function ChatHubScreen({ dark, onBack }) {
   const [, setStreamingId] = React.useState(null);
   const scrollRef = React.useRef(null);
   const touchStartX = React.useRef(0);
+  const abortRef = React.useRef(null);
 
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -101,19 +126,113 @@ export function ChatHubScreen({ dark, onBack }) {
   };
 
   const handleSend = () => {
-    if (!input.trim()) return;
-    const now = new Date().toLocaleTimeString('zh', { hour: '2-digit', minute: '2-digit' });
-    setMessages((prev) => [
-      ...prev,
-      { id: Date.now(), text: input, isUser: true, time: now, tokens: Math.ceil(input.length * 1.3) },
-    ]);
+    if (!input.trim() || typing) return;
+    const text = input.trim();
+    const userMsg = { id: Date.now(), text, isUser: true, time: nowHHMM(), tokens: Math.ceil(text.length * 1.3) };
+    const next = [...messages, userMsg];
+    setMessages(next);
     setInput('');
     setTyping(true);
-    setTimeout(() => {
-      const thinkText = '用户提到了想法和感受，我应该以温暖和理解的方式回应，同时将这个信息存入记忆库...';
-      const fullText = '我在认真听你说呢。每一个想法都值得被记录和珍惜。[memory:用户分享的想法]';
-      streamText(Date.now() + 1, thinkText, fullText, 32);
-    }, 400);
+
+    const cfg = getChatConfig();
+    if (cfg.apiKey && cfg.model) {
+      streamReal(next, cfg);
+    } else {
+      // No key configured — keep the canned demo response.
+      setTimeout(() => {
+        const thinkText = '用户提到了想法和感受，我应该以温暖和理解的方式回应，同时将这个信息存入记忆库...';
+        const fullText = '我在认真听你说呢。每一个想法都值得被记录和珍惜。[memory:用户分享的想法]';
+        streamText(Date.now() + 1, thinkText, fullText, 32);
+      }, 400);
+    }
+  };
+
+  const streamReal = (history, cfg) => {
+    const msgId = Date.now() + 1;
+    const startedAt = now();
+    let textStarted = false;
+    setMessages((prev) => [
+      ...prev,
+      { id: msgId, text: '', isUser: false, time: nowHHMM(), tokens: 0, streaming: true },
+    ]);
+    setStreamingId(msgId);
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+
+    const providerMessages = history
+      .map((m) => ({ role: m.isUser ? 'user' : 'assistant', content: m.text }))
+      .filter((m) => m.content);
+
+    const finish = () => {
+      setTyping(false);
+      setStreamingId(null);
+      abortRef.current = null;
+    };
+
+    streamChat(
+      {
+        provider: cfg.provider,
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        system: cfg.system,
+        thinking: cfg.provider === 'anthropic',
+        messages: providerMessages,
+      },
+      {
+        signal: ac.signal,
+        onThinking: (d) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId ? { ...m, thinking: (m.thinking || '') + d, thinkingStreaming: true } : m
+            )
+          );
+        },
+        onText: (d) => {
+          if (!textStarted) {
+            textStarted = true;
+            const dur = ((now() - startedAt) / 1000).toFixed(1) + 's';
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msgId && m.thinking ? { ...m, thinkingStreaming: false, thinkingDuration: dur } : m
+              )
+            );
+          }
+          setMessages((prev) => prev.map((m) => (m.id === msgId ? { ...m, text: (m.text || '') + d } : m)));
+        },
+        onDone: (usage) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? {
+                    ...m,
+                    streaming: false,
+                    thinkingStreaming: false,
+                    tokens: (usage && (usage.completion || usage.total)) || Math.ceil((m.text || '').length * 0.6),
+                  }
+                : m
+            )
+          );
+          finish();
+        },
+        onError: (err) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === msgId
+                ? {
+                    ...m,
+                    streaming: false,
+                    thinkingStreaming: false,
+                    text: (m.text || '') + (m.text ? '\n\n' : '') + '⚠️ ' + err.message,
+                  }
+                : m
+            )
+          );
+          finish();
+        },
+      }
+    ).then(finish, finish);
   };
 
   const [chatHistory, setChatHistory] = React.useState([
@@ -445,7 +564,10 @@ export function ChatHubScreen({ dark, onBack }) {
                 <div style={{ flex: 1 }} />
                 {typing ? (
                   <div
-                    onClick={() => setTyping(false)}
+                    onClick={() => {
+                      abortRef.current?.abort();
+                      setTyping(false);
+                    }}
                     style={{
                       width: 32,
                       height: 32,

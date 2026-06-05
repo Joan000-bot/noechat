@@ -3,6 +3,15 @@ import { useColors } from '../theme/colors';
 import { Glass } from '../components/Glass';
 import { SectionLabel } from '../components/SectionLabel';
 import { BackBtn } from '../components/BackBtn';
+import { fetchModels } from '../lib/chat';
+
+function lsSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
 
 // Settings — profile, infrastructure (API keys / MCP / storage), Noé persona
 // (system prompt + user style), and preferences. The theme switcher is lifted to
@@ -47,8 +56,20 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
       return '';
     }
   });
-  const [apiProvider, setApiProvider] = React.useState('openai');
-  const [apiKey, setApiKey] = React.useState('');
+  const [apiProvider, setApiProvider] = React.useState(() => {
+    try {
+      return localStorage.getItem('noe_provider') || 'openai';
+    } catch (e) {
+      return 'openai';
+    }
+  });
+  const [apiKey, setApiKey] = React.useState(() => {
+    try {
+      return localStorage.getItem('noe_api_key') || '';
+    } catch (e) {
+      return '';
+    }
+  });
   const [baseUrl, setBaseUrl] = React.useState(() => {
     try {
       return localStorage.getItem('noe_base_url') || 'https://api.openai.com/v1';
@@ -57,35 +78,56 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
     }
   });
   const [fetchedModels, setFetchedModels] = React.useState([]);
-  const [selectedModel, setSelectedModel] = React.useState('');
+  const [selectedModel, setSelectedModel] = React.useState(() => {
+    try {
+      return localStorage.getItem('noe_model') || '';
+    } catch (e) {
+      return '';
+    }
+  });
   const [fetching, setFetching] = React.useState(false);
+  const [fetchError, setFetchError] = React.useState('');
 
   // Auto-set base URL when provider changes
   const switchProvider = (p) => {
     setApiProvider(p);
     setFetchedModels([]);
+    setFetchError('');
     const defaultUrl = p === 'openai' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com/v1';
     setBaseUrl(defaultUrl);
+    lsSet('noe_provider', p);
+    lsSet('noe_base_url', defaultUrl);
   };
 
-  const handleFetchModels = () => {
-    if (!apiKey.trim() || !baseUrl.trim()) return;
+  const selectModel = (m) => {
+    setSelectedModel(m);
+    lsSet('noe_model', m);
+  };
+
+  const handleFetchModels = async () => {
+    if (!apiKey.trim() || !baseUrl.trim() || fetching) return;
     setFetching(true);
-    // Simulate /v1/models or /v1/chat/completions endpoint fetch
-    setTimeout(() => {
-      const models =
+    setFetchError('');
+    lsSet('noe_provider', apiProvider);
+    lsSet('noe_base_url', baseUrl);
+    lsSet('noe_api_key', apiKey);
+    try {
+      const models = await fetchModels({ provider: apiProvider, baseUrl, apiKey });
+      if (!models.length) throw new Error('未返回任何模型');
+      setFetchedModels(models);
+      selectModel(models[0]);
+    } catch (e) {
+      // Fall back to a curated list so configuration still works offline / on CORS.
+      setFetchError(String(e?.message || e));
+      const fallback =
         apiProvider === 'openai'
           ? ['gpt-4o', 'gpt-4o-mini', 'o3', 'o4-mini', 'gpt-4.1']
-          : ['claude-sonnet-4-5', 'claude-opus-4', 'claude-haiku-3.5'];
-      setFetchedModels(models);
-      setSelectedModel(models[0]);
+          : ['claude-opus-4-1', 'claude-sonnet-4-5', 'claude-haiku-4-5'];
+      setFetchedModels(fallback);
+      selectModel(fallback[0]);
+    } finally {
       setFetching(false);
-      try {
-        localStorage.setItem('noe_base_url', baseUrl);
-      } catch (e) {
-        /* ignore */
-      }
-    }, 800);
+    }
   };
 
   const settingSections = [
@@ -356,7 +398,10 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                             <input
                               value={apiKey}
-                              onChange={(e) => setApiKey(e.target.value)}
+                              onChange={(e) => {
+                                setApiKey(e.target.value);
+                                lsSet('noe_api_key', e.target.value);
+                              }}
                               placeholder={apiProvider === 'openai' ? 'sk-...' : 'sk-ant-...'}
                               type="password"
                               style={{
@@ -388,13 +433,21 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
                               {fetching ? '拉取中...' : '拉取模型'}
                             </div>
                           </div>
+                          {fetchError && (
+                            <div style={{ fontSize: 11, color: '#C87B94', marginTop: 6 }}>
+                              拉取失败，已用备用列表（{fetchError}）
+                            </div>
+                          )}
                         </div>
                         {/* Base URL */}
                         <div style={{ marginBottom: 8 }}>
                           <div style={{ fontSize: 11, color: c.muted, marginBottom: 4 }}>Base URL</div>
                           <input
                             value={baseUrl}
-                            onChange={(e) => setBaseUrl(e.target.value)}
+                            onChange={(e) => {
+                              setBaseUrl(e.target.value);
+                              lsSet('noe_base_url', e.target.value);
+                            }}
                             placeholder="https://api.openai.com/v1"
                             style={{
                               width: '100%',
@@ -435,7 +488,7 @@ export function SettingsScreen({ dark, onBack, themeMode, onThemeChange }) {
                               {fetchedModels.map((m) => (
                                 <div
                                   key={m}
-                                  onClick={() => setSelectedModel(m)}
+                                  onClick={() => selectModel(m)}
                                   style={{
                                     padding: '4px 10px',
                                     borderRadius: 8,
