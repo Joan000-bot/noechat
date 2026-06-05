@@ -71,18 +71,35 @@ design_handoff_noe/        Original design prototype + spec (source of truth)
   and a chromatic‑dispersion edge. Defined once in `SvgFilters`.
 - **Phone frame** — fixed 402×874 and scaled down to fit smaller viewports, so
   it stays usable on a real phone while preserving the design proportions.
-- **Persistence** — avatar, username, theme, base URL, system prompt, user
-  style and the last screen are stored in `localStorage`.
+- **Persistence** — avatar, username, theme, last screen, chat config
+  (provider / key / base URL / model), system prompt, user style, terminal
+  WebSocket URL, and the Memory / Journal / Message Board entries are all stored
+  in `localStorage`.
 
-## Next steps
+## Backends
 
-The handoff describes real backing services that aren't wired yet:
+| Feature | Status |
+| --- | --- |
+| **Chat** | **Real.** Streams from an OpenAI/Anthropic‑compatible API via the same‑origin `/api/chat` proxy (`api/chat.js` on Vercel, mirrored by a Vite dev middleware). Configure provider + key + model in Settings. Falls back to a canned demo with no key. |
+| **Terminal** | **Real** when a backend is configured — xterm.js over a WebSocket to `server/terminal` (`node-pty`). Set the `ws://` URL via the ⚙ in the Terminal screen; falls back to a simulated session otherwise. See `server/terminal/README.md`. |
+| **Memory / Journal / Message Board** | **Real** local persistence (add / remove, saved to `localStorage`). |
+| **Music** | Mock playlist + simulated playback (Spotify integration is a possible next step). |
 
-- **Chat** → stream from an OpenAI/Anthropic‑compatible `…/chat/completions`
-  endpoint (key + base URL already captured in Settings), with extended
-  thinking.
-- **Music** → connect a real player / shared session.
-- **Terminal** → backend WebSocket → `node-pty` for a live PTY.
+## Deploy to Vercel (git integration)
 
-See `design_handoff_noe/README.md` for the full spec (design tokens, animation
+The repo is zero‑config ready: Vercel auto‑detects **Vite** (build `vite build`
+→ `dist`) and turns `api/*` into **Edge functions** automatically.
+
+1. Vercel dashboard → **Add New… → Project → Import** the GitHub repo
+   `Joan000-bot/noechat`. Keep the auto‑detected Vite settings.
+2. Production deploys track the **`main`** branch — merge the PR into `main` to
+   publish the app. Every PR also gets an automatic **preview** URL.
+3. *(Optional)* set `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` env vars for a shared
+   chat key; otherwise each user enters their own in Settings.
+
+> The terminal's `node-pty` server is **not** deployed by Vercel (serverless
+> can't host a PTY). Run `server/terminal` on a host that allows long‑lived
+> sockets (e.g. a VPS) and point the app at its `wss://` URL.
+
+See `design_handoff_noe/README.md` for the full design spec (tokens, animation
 table, state model, backend architecture).

@@ -3,12 +3,14 @@ import { useColors } from '../theme/colors';
 import { Glass } from '../components/Glass';
 import { NoeOrb } from '../components/NoeOrb';
 import { BackBtn } from '../components/BackBtn';
+import { usePersistentState } from '../lib/storage';
 
 // Message Board — staggered sticky notes between you and Noé; Noé auto-replies.
+// Notes persist locally.
 export function MessageBoardScreen({ dark, onBack }) {
   const c = useColors(dark);
   const [input, setInput] = React.useState('');
-  const [notes, setNotes] = React.useState([
+  const [notes, setNotes] = usePersistentState('noe_board', [
     { id: 1, text: '记得多喝水 🌊', author: 'Noé', time: '今天 09:00', color: '#9B8ACE' },
     { id: 2, text: '明天要去看牙医！', author: '你', time: '今天 08:30', color: '#6B9EC4' },
     { id: 3, text: '推荐你听 Ludovico Einaudi 的 Nuvole Bianche', author: 'Noé', time: '昨天', color: '#C87B94' },

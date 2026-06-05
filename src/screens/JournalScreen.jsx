@@ -3,12 +3,14 @@ import { useColors } from '../theme/colors';
 import { Glass } from '../components/Glass';
 import { NoeOrb } from '../components/NoeOrb';
 import { BackBtn } from '../components/BackBtn';
+import { usePersistentState } from '../lib/storage';
 
 // Journal — a collaborative diary where Noé auto-responds to each entry.
+// Entries persist locally.
 export function JournalScreen({ dark, onBack }) {
   const c = useColors(dark);
   const [content, setContent] = React.useState('');
-  const [entries, setEntries] = React.useState([
+  const [entries, setEntries] = usePersistentState('noe_journal', [
     {
       id: 1,
       date: '6月4日',
